@@ -1,0 +1,112 @@
+---
+title: "Big data in Sport Industry Project"
+author: "Ku, Bonseong"
+date: "2019년 5월 29일"
+output: html_document
+---
+
+# 패키지, 데이터 불러오기
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(ggwordcloud)
+```
+
+1. 알버트 아인슈타인(Albert Einstein)의 “Relativity: The Special and General Theory” : 상대성이론 제시
+
+2. 갈릴레오 갈릴레이(Galileo Galilei)의 “Discourse on Floating Bodies” : 당시 유행하던 구시대의 아리스토텔레스 관점의 물리학 논파
+
+3. 크리스티안 호이겐스(Christiaan Huygens)의 “Treaties on Light” : 빛의 굴절에 관한 이론 제시
+
+4. 니콜라 테슬라(Nicola Tesla)의 “Experiment with Alternate Currents of High Potential and High Frequency” : 토마스 에디슨의 직류전기보다 안전한 교류전기의 유용성 및 안정성을 강조
+
+
+
+```{r cars}
+#einstein <- scan( "http://www.gutenberg.org/files/5001/5001-h/5001-h.htm" , what = character() )
+galilei <- scan( "http://www.gutenberg.org/cache/epub/37729/pg37729.txt" , what = character() )
+huygens <- scan( "http://www.gutenberg.org/cache/epub/14725/pg14725.txt" , what = character() )
+tesla <- scan( "http://www.gutenberg.org/cache/epub/13476/pg13476.txt" , what = character() )
+
+einstein <- scan( "./pg5001.txt" , what = character() )
+#galilei <- scan( "pg37729.txt" , what = character() )
+#huygens <- scan( "pg14725.txt" , what = character() )
+#tesla <- scan( "pg13476.txt" , what = character() )
+```
+
+# 의미 없는 단어 제거
+
+여기에서 영어권에서 흔히 쓰이는 구두점(punctuation) 및 띄어쓰기, 줄내림을 의미하는 `\n` 표기 등을 원문으로부터 제거하고 사용된 모든 단어들을 낱개로 나누어 다음과 같이 `tmp_xxxx`로 옮겨 놓았다. 그럼에도 깨끗하게 처리되지 않았음을 알 수 있으며, 이는 향후 분석에 영향을 주지 않을 것이다.
+
+```{r warning=FALSE}
+remove_punct <- function( str ) {
+    tmp <- gsub( "[[:punct:][:blank:]]+" , "" , str )
+    tmp <- unlist( apply( as.matrix( tmp ) , c(1,2) , strsplit , split = "\n" ) )
+    tmp <- tmp[ tmp != "" ]
+    res <- tolower( tmp )
+    return( res )
+}
+
+tmp_einstein <- remove_punct( einstein )
+tmp_galilei <- remove_punct( galilei )
+tmp_huygens <- remove_punct( huygens )
+tmp_tesla <- remove_punct( tesla )
+
+```
+
+```{r}
+length( tmp_einstein ); head( tmp_einstein , 20 )
+length( tmp_galilei ); head( tmp_galilei , 20 )
+length( tmp_huygens ); head( tmp_huygens , 20 )
+length( tmp_tesla ); head( tmp_tesla , 20 )
+```
+
+# 텍스트 마이닝
+해당 논문들은 4명의 저자의 각자 전문성을 나타내는 글이다. 논문에 사용된 단어만을 이용해 각 논문의 내용이 어떤 종류의 글인지 파악하는 것이 목적이다.
+
+TF-IDF(Term Frequency - Inverse Document Frequency)는 정보 검색과 텍스트 마이닝에서 이용하는 가중치로, 여러 문서로 이루어진 문서군이 있을 때 어떤 단어가 특정 문서 내에서 얼마나 중요한 것인지를 나타내는 통계적 수치이다. 문서의 핵심어를 추출하거나, 검색 엔진에서 검색 결과의 순위를 결정하거나, 문서들 사이의 비슷한 정도를 구하는 등의 용도로 사용할 수 있다.
+
+이 가중치를 이용하여 각 단어에 중요하다고 판단하는 단어에 가중치를 두기로 하고, 에세이를 분석했다.
+
+```{r}
+tab_einstein <- table( tmp_einstein ) ; tab_einstein <- sort( tab_einstein , decreasing = TRUE )
+tab_galilei <- table( tmp_galilei ) ; tab_galileo <- sort( tab_galilei , decreasing = TRUE )
+tab_huygens <- table( tmp_huygens ) ; tab_huygens <- sort( tab_huygens , decreasing = TRUE )
+tab_tesla <- table( tmp_tesla ) ; tab_tesla <- sort( tab_tesla , decreasing = TRUE )
+
+
+
+author <- rep( c( "Einstein" , "Galilei" , "Huygens" , "Tesla" ) , c( length( tab_einstein ) , length( tab_galilei ) , length( tab_huygens ) , length( tab_tesla ) ) )
+word <- c( names( tab_einstein ) , names( tab_galilei ) , names( tab_huygens ) , names( tab_tesla ) )
+count <- c( tab_einstein , tab_galilei , tab_huygens , tab_tesla )
+
+tf_einstein <- tab_einstein / sum( tab_einstein )
+tf_galilei <- tab_galilei / sum( tab_galilei )
+tf_huygens <- tab_huygens / sum( tab_huygens )
+tf_tesla <- tab_tesla / sum( tab_tesla )
+tf <- c( tf_einstein , tf_galilei , tf_huygens , tf_tesla )
+
+physics <- data.frame( author = author , word = word , count = count , tf = tf , stringsAsFactors = FALSE )
+
+idf_fun <- function( word ) {
+    idx <- physics$word %in% word
+    idf <- log( 4 / sum(idx) )
+    return( idf )
+} #tf_idf 가중치 함수 설정
+
+idf <- sapply( physics$word , FUN = idf_fun )
+
+physics$idf <- idf
+physics$tf_idf <- physics$tf * physics$idf
+
+idx <- tapply( physics$tf_idf , physics$author , FUN = order , decreasing = TRUE )
+
+tf_idf_einstein <- physics[ physics$author == "Einstein" , ][ idx$Einstein[1:10] ,]
+tf_idf_galilei <- physics[ physics$author == "Galilei" , ][ idx$Galilei[1:10] ,]
+tf_idf_huygens <- physics[ physics$author == "Huygens" , ][ idx$Huygens[1:10] ,]
+tf_idf_tesla <- physics[ physics$author == "Tesla" , ][ idx$Tesla[1:10] ,]
+
+physics <- rbind( tf_idf_einstein , tf_idf_galilei , tf_idf_huygens , tf_idf_tesla )
+
+p <- ggplot( physics , aes( x = factor(word , levels = word ) , y = tf_idf , fill = author ) ) + geom_col( show.legend = FALSE )
+p + facet_wrap( ~ author , scales = "free" ) + coord_flip() + theme( axis.title.y = element_blank() )
+```
